@@ -1,0 +1,246 @@
+# ─────────────────────────────────────────────────────────────────
+#  SyncLab — AI Lip-Sync Dubbing Engine
+#  Full Requirements & Dependency Reference
+# ─────────────────────────────────────────────────────────────────
+
+
+# ════════════════════════════
+#  NODE.JS BACKEND PACKAGES
+#  Install: npm install
+# ════════════════════════════
+
+# express@4.18.2            — HTTP server & routing
+# multer@1.4.5-lts.1        — Multipart video file uploads
+# cors@2.8.5                — Cross-origin requests
+# uuid@9.0.0                — Unique job IDs
+# nodemon@3.0.1             — Dev auto-restart (devDependency)
+
+
+# ════════════════════════════
+#  PYTHON AI/ML PACKAGES
+#  Install: pip install -r requirements.txt
+# ════════════════════════════
+
+# ── Speech Recognition (Transcription) ──
+openai-whisper>=20231117
+# OR use faster-whisper for 4x speed:
+# faster-whisper>=0.10.0
+
+# ── Text-to-Speech (Voice Synthesis) ──
+TTS>=0.22.0
+# Includes XTTS v2 — best multilingual voice cloning
+# 28 languages, 3-second reference audio cloning
+
+# ── Lip Sync ──
+# (Wav2Lip must be cloned separately — see setup below)
+# Requirements inside Wav2Lip/requirements.txt:
+# torch>=1.9.0
+# torchvision>=0.10.0
+# numpy>=1.18.5
+# scipy>=1.4.1
+# opencv-python>=4.1.0
+# librosa>=0.7.2
+# numba>=0.48
+# resampy>=0.2.2
+# ffmpeg-python>=0.2.0
+
+# ── Face Detection ──
+face-alignment>=1.3.5
+dlib>=19.22.1
+mediapipe>=0.10.0
+
+# ── Video Processing ──
+opencv-python>=4.8.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.9
+moviepy>=1.0.3
+
+# ── Audio Processing ──
+librosa>=0.10.0
+soundfile>=0.12.1
+pydub>=0.25.1
+
+# ── Translation (optional local) ──
+# argostranslate>=1.9.0     — Free offline translation
+# deep-translator>=1.11.4   — Wrapper for multiple providers
+
+# ── General ──
+numpy>=1.24.0
+Pillow>=10.0.0
+tqdm>=4.65.0
+requests>=2.31.0
+
+
+# ════════════════════════════
+#  SYSTEM DEPENDENCIES
+#  Install separately
+# ════════════════════════════
+
+# ffmpeg (REQUIRED)
+# ─────────────────
+# Ubuntu/Debian:  sudo apt install ffmpeg
+# macOS:          brew install ffmpeg
+# Windows:        https://www.gyan.dev/ffmpeg/builds/
+# Version: 5.x or 6.x recommended
+#
+# Required for:
+#   - Audio extraction from video
+#   - Frame extraction
+#   - Final video encoding
+#   - Audio/video merging
+
+# CUDA (RECOMMENDED for GPU acceleration)
+# ────────────────────────────────────────
+# Version: CUDA 11.8 or 12.x
+# Download: https://developer.nvidia.com/cuda-downloads
+# Enables GPU acceleration for Wav2Lip, Whisper, and XTTS
+# CPU-only mode is supported but ~10x slower
+
+# cmake (for dlib compilation)
+# ────────────────────────────
+# Ubuntu: sudo apt install cmake
+# macOS:  brew install cmake
+
+
+# ════════════════════════════
+#  EXTERNAL AI MODEL REPOS
+#  Clone & setup manually
+# ════════════════════════════
+
+# ── Wav2Lip (Lip Sync Engine) ──
+# git clone https://github.com/Rudrabha/Wav2Lip
+# cd Wav2Lip && pip install -r requirements.txt
+#
+# Download pretrained model:
+#   wget https://iiitaphyd-my.sharepoint.com/personal/radrabha_m_research_iiit_ac_in/...
+#   (see Wav2Lip README for current model download link)
+#   Place at: models/wav2lip_gan.pth
+#
+# Environment variable:
+#   WAV2LIP_MODEL=/path/to/models/wav2lip_gan.pth
+
+# ── SadTalker (Alternative 3D Lip Sync) ──
+# git clone https://github.com/OpenTalker/SadTalker
+# cd SadTalker && bash scripts/download_models.sh
+# pip install -r requirements.txt
+
+# ── XTTS v2 Server (Voice Cloning) ──
+# pip install TTS
+# tts-server --model_name tts_models/multilingual/multi-dataset/xtts_v2 --port 5002
+#
+# Environment variable:
+#   XTTS_SERVER_URL=http://localhost:5002
+
+
+# ════════════════════════════
+#  OPTIONAL CLOUD APIs
+#  (requires accounts/keys)
+# ════════════════════════════
+
+# ── ElevenLabs (Premium TTS) ──
+# Sign up: https://elevenlabs.io
+# Environment variable:
+#   ELEVENLABS_API_KEY=your_key_here
+
+# ── DeepL (Premium Translation) ──
+# Sign up: https://www.deepl.com/pro-api
+# Free tier: 500K chars/month
+# Environment variable:
+#   DEEPL_API_KEY=your_key_here
+
+# ── LibreTranslate (Free Self-Hosted Translation) ──
+# docker run -ti --rm -p 5000:5000 libretranslate/libretranslate
+# Environment variable:
+#   LIBRETRANSLATE_URL=http://localhost:5000
+#   LIBRETRANSLATE_KEY=          (leave blank for no auth)
+
+# ── OpenAI Whisper API (Cloud ASR) ──
+# Environment variable:
+#   OPENAI_API_KEY=your_key_here
+
+
+# ════════════════════════════
+#  ENVIRONMENT VARIABLES
+#  Create a .env file
+# ════════════════════════════
+
+# PORT=3000
+# NODE_ENV=production
+#
+# # Optional API Keys
+# OPENAI_API_KEY=
+# ELEVENLABS_API_KEY=
+# DEEPL_API_KEY=
+#
+# # Local Service URLs
+# LIBRETRANSLATE_URL=http://localhost:5000
+# LIBRETRANSLATE_KEY=
+# XTTS_SERVER_URL=http://localhost:5002
+#
+# # Model Paths
+# WAV2LIP_MODEL=./Wav2Lip/checkpoints/wav2lip_gan.pth
+# WHISPER_MODEL=base        # tiny | base | small | medium | large
+
+
+# ════════════════════════════
+#  HARDWARE REQUIREMENTS
+# ════════════════════════════
+
+# Minimum (CPU only):
+#   CPU: 4 cores, 3GHz+
+#   RAM: 8GB
+#   Storage: 20GB free
+#   Processing time: ~5-15 min per minute of video
+
+# Recommended (GPU):
+#   GPU: NVIDIA GTX 1080 / RTX 2070 or better (8GB VRAM)
+#   CPU: 8 cores
+#   RAM: 16GB+
+#   Storage: 50GB SSD
+#   Processing time: ~30-60 sec per minute of video
+
+# Production (Multi-GPU):
+#   GPU: NVIDIA A100 or RTX 3090/4090 (24GB VRAM)
+#   RAM: 64GB+
+#   Storage: NVMe SSD 500GB+
+#   Processing time: ~5-15 sec per minute of video
+
+
+# ════════════════════════════
+#  DOCKER SETUP (Recommended)
+# ════════════════════════════
+
+# Build:   docker build -t synclab .
+# Run:     docker run -p 3000:3000 --gpus all synclab
+#
+# Or with docker-compose:
+#   docker-compose up -d
+#
+# Includes: ffmpeg, Python env, all pip packages pre-installed
+
+
+# ════════════════════════════
+#  QUICK INSTALL SUMMARY
+# ════════════════════════════
+
+# 1. System:
+#    sudo apt install ffmpeg cmake python3-pip nodejs npm
+
+# 2. Node packages:
+#    npm install
+
+# 3. Python packages:
+#    pip install openai-whisper TTS opencv-python moviepy librosa
+
+# 4. Wav2Lip:
+#    git clone https://github.com/Rudrabha/Wav2Lip
+#    pip install -r Wav2Lip/requirements.txt
+#    # Download model to Wav2Lip/checkpoints/wav2lip_gan.pth
+
+# 5. Configure .env with your API keys
+
+# 6. Start server:
+#    npm start
+
+# 7. Open browser:
+#    http://localhost:3000
