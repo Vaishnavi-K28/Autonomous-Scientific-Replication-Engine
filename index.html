@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SyncLab — AI Lip-Sync Dubbing Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #050608;
+      --bg2:      #090c10;
+      --surface:  #0e1319;
+      --surface2: #141c24;
+      --border:   #1a2535;
+      --border2:  #243040;
+      --cyan:     #00e5cc;
+      --cyan2:    #00bfad;
+      --gold:     #f5c542;
+      --red:      #ff4757;
+      --text:     #dce8f0;
+      --muted:    #4a6070;
+      --muted2:   #2e4050;
+      --glow:     rgba(0,229,204,0.12);
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text);
+      font-family: 'Outfit', sans-serif; font-size: 14px; overflow-x: hidden; }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+      pointer-events: none; z-index: 999;
+    }
+
+    /* Film-strip top bar */
+    .filmstrip {
+      position: fixed; top: 0; left: 0; right: 0; height: 6px;
+      background: repeating-linear-gradient(90deg,
+        var(--cyan) 0, var(--cyan) 12px,
+        transparent 12px, transparent 20px);
+      opacity: 0.4; z-index: 100;
+    }
+
+    /* Ambient glow */
+    .ambient {
+      position: fixed; top: -200px; right: -100px;
+      width: 600px; height: 600px; border-radius: 50%;
+      background: radial-gradient(ellipse, rgba(0,229,204,0.04) 0%, transparent 65%);
+      pointer-events: none; z-index: 0;
+      animation: ambientDrift 18s ease-in-out infinite alternate;
+    }
+
+    @keyframes ambientDrift {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(-80px, 80px) scale(1.2); }
+    }
+
+    /* ── Layout ── */
+    .app { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; padding: 0 32px; height: 62px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(5,6,8,0.92); backdrop-filter: blur(16px);
+      position: sticky; top: 0; z-index: 50;
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+      font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 3px;
+      color: var(--cyan); text-shadow: 0 0 20px rgba(0,229,204,0.5);
+    }
+
+    .logo-mark {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--cyan), var(--cyan2));
+      display: grid; place-items: center; flex-shrink: 0;
+    }
+
+    .logo-mark svg { width: 20px; height: 20px; }
+
+    .logo-sub {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+      color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
+      margin-left: 2px; margin-top: 2px;
+    }
+
+    .header-right {
+      margin-left: auto; display: flex; align-items: center; gap: 14px;
+    }
+
+    .hbadge {
+      padding: 4px 12px; border-radius: 20px;
+      border: 1px solid var(--border2);
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    .hbadge.live { border-color: rgba(0,229,204,0.3); color: var(--cyan); }
+    .hbadge.live::before { content: '● '; font-size: 8px; animation: blink 2s step-end infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    /* ── Main Grid ── */
+    .main-grid {
+      flex: 1; display: grid;
+      grid-template-columns: 380px 1fr 300px;
+      grid-template-rows: 1fr;
+      gap: 0;
+    }
+
+    /* ── Panel base ── */
+    .panel {
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel:last-child { border-right: none; }
+
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--bg2); flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+      color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
+    }
+
+    .panel-title span { color: var(--cyan); margin-right: 6px; }
+
+    /* ── LEFT: Upload & Config ── */
+    .left-panel { background: var(--bg2); }
+
+    .panel-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+    .panel-body::-webkit-scrollbar { width: 4px; }
+    .panel-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 2px dashed var(--border2);
+      border-radius: 16px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all .25s;
+      position: relative;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .upload-zone::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, transparent 40%, rgba(0,229,204,0.02));
+      pointer-events: none;
+    }
+
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--cyan); background: rgba(0,229,204,0.04);
+    }
+
+    .upload-zone.has-file { border-style: solid; border-color: rgba(0,229,204,0.3); }
+
+    .upload-icon {
+      width: 56px; height: 56px; margin: 0 auto 14px;
+      background: var(--surface2); border-radius: 14px;
+      display: grid; place-items: center; font-size: 24px;
+      border: 1px solid var(--border2);
+    }
+
+    .upload-zone h3 {
+      font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px;
+      color: var(--text); margin-bottom: 6px;
+    }
+
+    .upload-zone p { font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .upload-zone .fmt { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted2); margin-top: 8px; }
+
+    /* Video preview */
+    .video-preview {
+      display: none;
+      border-radius: 12px; overflow: hidden;
+      border: 1px solid var(--border2);
+      background: #000; position: relative;
+    }
+
+    .video-preview.active { display: block; }
+    .video-preview video { width: 100%; display: block; max-height: 200px; object-fit: contain; background: #000; }
+
+    .video-meta {
+      padding: 10px 14px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between;
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted);
+    }
+
+    /* Section label */
+    .sec-label {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+      color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    /* Language grid */
+    .lang-from-to {
+      display: grid; grid-template-columns: 1fr 24px 1fr; align-items: center; gap: 8px;
+    }
+
+    .lang-select {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 10px; padding: 10px 12px;
+      color: var(--text); font-size: 13px; font-family: 'Outfit', sans-serif;
+      cursor: pointer; width: 100%; appearance: none;
+      transition: border-color .2s;
+    }
+
+    .lang-select:focus { outline: none; border-color: var(--cyan); }
+
+    .arrow-icon {
+      display: grid; place-items: center; color: var(--cyan); font-size: 14px;
+    }
+
+    /* Options */
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .opt-card {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 10px; padding: 12px;
+      cursor: pointer; transition: all .2s;
+    }
+
+    .opt-card:hover { border-color: var(--border); background: var(--surface2); }
+    .opt-card.active { border-color: rgba(0,229,204,0.4); background: rgba(0,229,204,0.05); }
+
+    .opt-card .opt-icon { font-size: 18px; margin-bottom: 6px; }
+    .opt-card .opt-name { font-size: 12px; font-weight: 500; }
+    .opt-card .opt-desc { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    /* Sliders */
+    .slider-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .slider-row label { font-size: 12px; color: var(--muted); }
+
+    .slider-row .val {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--cyan);
+    }
+
+    input[type=range] {
+      -webkit-appearance: none; width: 100%; height: 3px;
+      background: var(--border2); border-radius: 2px; outline: none; cursor: pointer;
+      margin-bottom: 16px;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px;
+      border-radius: 50%; background: var(--cyan);
+      box-shadow: 0 0 8px rgba(0,229,204,0.6);
+    }
+
+    /* Process button */
+    .process-btn {
+      width: 100%; padding: 15px; border: none; border-radius: 12px;
+      background: linear-gradient(135deg, var(--cyan), var(--cyan2));
+      color: #050608; font-family: 'Bebas Neue', sans-serif;
+      font-size: 18px; letter-spacing: 3px; cursor: pointer;
+      transition: all .2s; position: relative; overflow: hidden;
+      box-shadow: 0 8px 28px rgba(0,229,204,0.25);
+    }
+
+    .process-btn::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+      pointer-events: none;
+    }
+
+    .process-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 36px rgba(0,229,204,0.35); }
+    .process-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ── CENTER: Preview & Progress ── */
+    .center-panel { background: var(--bg); display: flex; flex-direction: column; }
+
+    .preview-area {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px; gap: 24px;
+    }
+
+    /* Dual video compare */
+    .compare-wrap {
+      width: 100%; max-width: 680px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    }
+
+    .video-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
+    }
+
+    .video-card-header {
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted);
+      letter-spacing: 1px; text-transform: uppercase;
+    }
+
+    .vc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted2); }
+    .vc-dot.active { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); animation: blink 2s step-end infinite; }
+
+    .video-card video {
+      width: 100%; display: block; min-height: 160px; background: #000; object-fit: contain;
+    }
+
+    .video-placeholder {
+      min-height: 160px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px;
+      color: var(--muted2); font-size: 28px;
+    }
+
+    .video-placeholder span { font-size: 11px; font-family: 'IBM Plex Mono', monospace; }
+
+    /* Timeline / Waveform */
+    .timeline-wrap {
+      width: 100%; max-width: 680px;
+    }
+
+    .timeline-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .timeline-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+
+    canvas#waveform {
+      width: 100%; height: 64px;
+      border-radius: 10px; background: var(--surface);
+      border: 1px solid var(--border);
+      display: block;
+    }
+
+    /* Processing overlay */
+    .processing-overlay {
+      display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 20px; padding: 40px;
+      text-align: center;
+    }
+
+    .processing-overlay.active { display: flex; }
+
+    .spinner-ring {
+      width: 80px; height: 80px;
+      border: 3px solid var(--border2);
+      border-top-color: var(--cyan);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .proc-title {
+      font-family: 'Bebas Neue', sans-serif; font-size: 28px;
+      letter-spacing: 2px; color: var(--cyan);
+    }
+
+    .proc-step {
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted);
+      max-width: 340px; line-height: 1.8;
+    }
+
+    /* Stage pills */
+    .stage-pills {
+      display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+    }
+
+    .stage-pill {
+      padding: 5px 14px; border-radius: 20px; font-size: 11px;
+      font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.5px;
+      border: 1px solid var(--border2); color: var(--muted2);
+      transition: all .3s;
+    }
+
+    .stage-pill.done { border-color: rgba(0,229,204,0.4); color: var(--cyan); background: rgba(0,229,204,0.06); }
+    .stage-pill.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,229,204,0.1); animation: pulse-pill .8s ease-in-out infinite alternate; }
+    @keyframes pulse-pill { from { box-shadow: 0 0 0 rgba(0,229,204,0); } to { box-shadow: 0 0 10px rgba(0,229,204,0.3); } }
+
+    /* Progress bar */
+    .prog-wrap { width: 100%; max-width: 460px; }
+    .prog-bar-bg { height: 4px; background: var(--border2); border-radius: 4px; overflow: hidden; }
+    .prog-bar { height: 100%; background: linear-gradient(90deg, var(--cyan2), var(--cyan)); border-radius: 4px;
+      width: 0%; transition: width .4s ease; box-shadow: 0 0 10px rgba(0,229,204,0.5); }
+    .prog-info { display: flex; justify-content: space-between; margin-top: 6px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--muted); }
+
+    /* ── RIGHT: Settings & Log ── */
+    .right-panel { background: var(--bg2); }
+
+    /* Model cards */
+    .model-card {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 12px; padding: 14px; margin-bottom: 10px;
+      cursor: pointer; transition: all .2s;
+    }
+
+    .model-card:hover { border-color: var(--border); }
+    .model-card.selected { border-color: rgba(0,229,204,0.4); background: rgba(0,229,204,0.04); }
+
+    .model-card .model-name {
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500;
+      color: var(--text); margin-bottom: 4px;
+    }
+
+    .model-card .model-desc { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+
+    .model-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .mtag {
+      padding: 2px 8px; border-radius: 20px; font-size: 9px;
+      font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.5px;
+      background: var(--surface2); border: 1px solid var(--border2); color: var(--muted);
+    }
+
+    .mtag.fast { color: var(--gold); border-color: rgba(245,197,66,0.3); }
+    .mtag.hq   { color: var(--cyan); border-color: rgba(0,229,204,0.3); }
+    .mtag.new  { color: #a78bfa;    border-color: rgba(167,139,250,0.3); }
+
+    /* Log */
+    .log-area {
+      flex: 1; overflow-y: auto; padding: 12px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      line-height: 1.9; color: var(--muted);
+    }
+
+    .log-area::-webkit-scrollbar { width: 3px; }
+    .log-area::-webkit-scrollbar-thumb { background: var(--border2); }
+
+    .log-entry { display: flex; gap: 8px; }
+    .log-entry .lt { color: var(--muted2); flex-shrink: 0; }
+    .log-entry .lm.ok  { color: var(--cyan); }
+    .log-entry .lm.err { color: var(--red); }
+    .log-entry .lm.warn { color: var(--gold); }
+
+    /* Download section */
+    .download-section {
+      padding: 16px; border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+
+    .dl-btn {
+      width: 100%; padding: 10px 14px; border-radius: 10px;
+      border: 1px solid var(--border2); background: var(--surface);
+      color: var(--text); font-size: 12px; font-family: 'Outfit', sans-serif;
+      cursor: pointer; display: flex; align-items: center; gap: 8px;
+      transition: all .2s;
+    }
+
+    .dl-btn:hover { border-color: var(--cyan); background: rgba(0,229,204,0.05); }
+    .dl-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .dl-btn svg { width: 14px; height: 14px; color: var(--cyan); flex-shrink: 0; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 200;
+      background: var(--surface); border: 1px solid var(--border2);
+      border-left: 3px solid var(--cyan);
+      border-radius: 10px; padding: 12px 18px;
+      font-size: 13px; max-width: 300px;
+      animation: toastIn .3s ease;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    @keyframes toastIn { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }
+
+    /* Responsive */
+    @media (max-width: 1100px) {
+      .main-grid { grid-template-columns: 340px 1fr; }
+      .right-panel { display: none; }
+    }
+
+    @media (max-width: 720px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .left-panel { border-right: none; border-bottom: 1px solid var(--border); max-height: 55vh; }
+    }
+
+    /* Fade-in on load */
+    .panel { animation: fadeUp .5s ease both; }
+    .left-panel  { animation-delay: .05s; }
+    .center-panel{ animation-delay: .1s; }
+    .right-panel { animation-delay: .15s; }
+
+    @keyframes fadeUp { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+<div class="filmstrip"></div>
+<div class="ambient"></div>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="#050608"/>
+        </svg>
+      </div>
+      <div>
+        SyncLab
+        <div class="logo-sub">AI Lip-Sync Dubbing Engine</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="hbadge live">API ONLINE</span>
+      <span class="hbadge" id="queueBadge">QUEUE: 0</span>
+      <span class="hbadge" id="gpuBadge">GPU: IDLE</span>
+    </div>
+  </header>
+
+  <!-- MAIN GRID -->
+  <div class="main-grid">
+
+    <!-- ── LEFT PANEL ── -->
+    <div class="panel left-panel">
+      <div class="panel-header">
+        <div class="panel-title"><span>01</span> SOURCE & CONFIG</div>
+        <button onclick="resetAll()" style="background:none;border:none;color:var(--muted);font-size:11px;font-family:'IBM Plex Mono',monospace;cursor:pointer;letter-spacing:1px">RESET</button>
+      </div>
+      <div class="panel-body">
+
+        <!-- Upload -->
+        <div>
+          <div class="sec-label">Source Video</div>
+          <div class="upload-zone" id="uploadZone"
+            ondragover="event.preventDefault();this.classList.add('dragover')"
+            ondragleave="this.classList.remove('dragover')"
+            ondrop="handleDrop(event)"
+            onclick="document.getElementById('videoFile').click()">
+            <input type="file" id="videoFile" accept="video/*" style="display:none" onchange="handleVideoFile(this.files[0])">
+            <div class="upload-icon" id="uploadIcon">🎬</div>
+            <h3 id="uploadTitle">Drop Video Here</h3>
+            <p id="uploadDesc">Drag & drop or click to upload your video file for dubbing</p>
+            <div class="fmt">MP4 · MOV · AVI · MKV · WEBM · up to 2GB</div>
+          </div>
+        </div>
+
+        <!-- Video preview -->
+        <div class="video-preview" id="videoPreview">
+          <video id="sourceVideo" controls></video>
+          <div class="video-meta">
+            <span id="vidName">—</span>
+            <span id="vidDur">—</span>
+          </div>
+        </div>
+
+        <!-- Language -->
+        <div>
+          <div class="sec-label">Language Translation</div>
+          <div class="lang-from-to">
+            <div>
+              <div style="font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-bottom:5px">FROM</div>
+              <select class="lang-select" id="langFrom">
+                <option value="auto">Auto Detect</option>
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="ru">Russian</option>
+                <option value="zh">Chinese</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="ar">Arabic</option>
+                <option value="hi">Hindi</option>
+              </select>
+            </div>
+            <div class="arrow-icon">→</div>
+            <div>
+              <div style="font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-bottom:5px">TO</div>
+              <select class="lang-select" id="langTo">
+                <option value="es">Spanish</option>
+                <option value="en">English</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="ru">Russian</option>
+                <option value="zh">Chinese</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="ar">Arabic</option>
+                <option value="hi">Hindi</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Voice clone -->
+        <div>
+          <div class="sec-label">Voice Mode</div>
+          <div class="options-grid">
+            <div class="opt-card active" id="opt-clone" onclick="selectOpt('clone',this)">
+              <div class="opt-icon">🎤</div>
+              <div class="opt-name">Voice Clone</div>
+              <div class="opt-desc">Preserves original speaker voice</div>
+            </div>
+            <div class="opt-card" id="opt-tts" onclick="selectOpt('tts',this)">
+              <div class="opt-icon">🔊</div>
+              <div class="opt-name">Neural TTS</div>
+              <div class="opt-desc">AI-generated natural voice</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lip sync quality -->
+        <div>
+          <div class="sec-label">Lip-Sync Quality</div>
+          <div class="options-grid">
+            <div class="opt-card active" id="opt-balanced" onclick="selectOpt('balanced',this)">
+              <div class="opt-icon">⚡</div>
+              <div class="opt-name">Balanced</div>
+              <div class="opt-desc">Fast · Good quality</div>
+            </div>
+            <div class="opt-card" id="opt-ultra" onclick="selectOpt('ultra',this)">
+              <div class="opt-icon">✨</div>
+              <div class="opt-name">Ultra HD</div>
+              <div class="opt-desc">Slow · Best quality</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fine tuning -->
+        <div>
+          <div class="sec-label">Fine Tuning</div>
+          <div class="slider-row">
+            <label>Sync Confidence</label><span class="val" id="syncVal">0.85</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.01" value="0.85"
+            oninput="document.getElementById('syncVal').textContent=parseFloat(this.value).toFixed(2)">
+
+          <div class="slider-row">
+            <label>Face Detection Margin</label><span class="val" id="faceVal">24px</span>
+          </div>
+          <input type="range" min="0" max="60" step="2" value="24"
+            oninput="document.getElementById('faceVal').textContent=this.value+'px'">
+
+          <div class="slider-row">
+            <label>Audio Blend</label><span class="val" id="blendVal">0.70</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.01" value="0.70"
+            oninput="document.getElementById('blendVal').textContent=parseFloat(this.value).toFixed(2)">
+        </div>
+
+        <button class="process-btn" id="processBtn" onclick="startProcessing()">
+          ▶ START DUBBING
+        </button>
+
+      </div>
+    </div>
+
+    <!-- ── CENTER PANEL ── -->
+    <div class="panel center-panel" style="border-right:1px solid var(--border)">
+      <div class="panel-header">
+        <div class="panel-title"><span>02</span> PREVIEW & OUTPUT</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted)" id="centerStatus">AWAITING INPUT</div>
+      </div>
+
+      <!-- Preview area (default) -->
+      <div class="preview-area" id="previewArea">
+        <div class="compare-wrap" id="compareWrap">
+          <div class="video-card">
+            <div class="video-card-header">
+              <div class="vc-dot"></div> ORIGINAL
+            </div>
+            <div class="video-placeholder" id="origPlaceholder">
+              🎬 <span>No video loaded</span>
+            </div>
+            <video id="origVideo" style="display:none" controls></video>
+          </div>
+          <div class="video-card">
+            <div class="video-card-header">
+              <div class="vc-dot active" id="dubDot"></div> DUBBED OUTPUT
+            </div>
+            <div class="video-placeholder" id="dubPlaceholder">
+              ✨ <span>Awaiting process</span>
+            </div>
+            <video id="dubVideo" style="display:none" controls></video>
+          </div>
+        </div>
+
+        <!-- Waveform -->
+        <div class="timeline-wrap">
+          <div class="timeline-header">
+            <span class="timeline-label">AUDIO WAVEFORM</span>
+            <span class="timeline-label" id="timeLabel">0:00 / 0:00</span>
+          </div>
+          <canvas id="waveform" width="680" height="64"></canvas>
+        </div>
+      </div>
+
+      <!-- Processing overlay -->
+      <div class="processing-overlay" id="processingOverlay">
+        <div class="spinner-ring"></div>
+        <div class="proc-title" id="procTitle">ANALYZING VIDEO</div>
+        <div class="proc-step" id="procStep">Detecting face landmarks and extracting audio stream...</div>
+
+        <div class="stage-pills">
+          <div class="stage-pill" id="pill-extract">EXTRACT</div>
+          <div class="stage-pill" id="pill-transcribe">TRANSCRIBE</div>
+          <div class="stage-pill" id="pill-translate">TRANSLATE</div>
+          <div class="stage-pill" id="pill-synth">SYNTHESIZE</div>
+          <div class="stage-pill" id="pill-lipsync">LIP-SYNC</div>
+          <div class="stage-pill" id="pill-render">RENDER</div>
+        </div>
+
+        <div class="prog-wrap">
+          <div class="prog-bar-bg"><div class="prog-bar" id="progBar"></div></div>
+          <div class="prog-info">
+            <span id="progLabel">Initializing...</span>
+            <span id="progPct">0%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT PANEL ── -->
+    <div class="panel right-panel">
+      <div class="panel-header">
+        <div class="panel-title"><span>03</span> MODELS & LOG</div>
+      </div>
+
+      <div class="panel-body">
+
+        <!-- Models -->
+        <div>
+          <div class="sec-label">Lip Sync Model</div>
+          <div class="model-card selected" onclick="selectModel(this)">
+            <div class="model-name">Wav2Lip HD</div>
+            <div class="model-desc">State-of-the-art GAN-based lip-sync synthesis with high fidelity face reconstruction.</div>
+            <div class="model-tags">
+              <span class="mtag hq">HIGH QUALITY</span>
+              <span class="mtag new">v2.1</span>
+            </div>
+          </div>
+          <div class="model-card" onclick="selectModel(this)">
+            <div class="model-name">SadTalker Fast</div>
+            <div class="model-desc">Lightweight 3D-based talking head model. Best for real-time previews.</div>
+            <div class="model-tags">
+              <span class="mtag fast">FAST</span>
+              <span class="mtag">3D MESH</span>
+            </div>
+          </div>
+          <div class="model-card" onclick="selectModel(this)">
+            <div class="model-name">DiffTalk Ultra</div>
+            <div class="model-desc">Diffusion-based talking head generation. Ultra-realistic at 4K resolution.</div>
+            <div class="model-tags">
+              <span class="mtag hq">ULTRA HQ</span>
+              <span class="mtag new">BETA</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TTS Model -->
+        <div>
+          <div class="sec-label">TTS / Voice Model</div>
+          <div class="model-card selected" onclick="selectModel(this)">
+            <div class="model-name">XTTS v2</div>
+            <div class="model-desc">Multilingual voice clone with 3s reference audio. 28 languages.</div>
+            <div class="model-tags">
+              <span class="mtag hq">CLONE</span>
+              <span class="mtag fast">28 LANGS</span>
+            </div>
+          </div>
+          <div class="model-card" onclick="selectModel(this)">
+            <div class="model-name">ElevenLabs API</div>
+            <div class="model-desc">Professional cloud TTS. Requires API key. Best voice quality.</div>
+            <div class="model-tags">
+              <span class="mtag new">CLOUD</span>
+              <span class="mtag">API KEY</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log -->
+      <div class="panel-header" style="flex-shrink:0">
+        <div class="panel-title"><span>04</span> SYSTEM LOG</div>
+        <button onclick="clearLog()" style="background:none;border:none;color:var(--muted);font-size:10px;font-family:'IBM Plex Mono',monospace;cursor:pointer;letter-spacing:1px">CLEAR</button>
+      </div>
+      <div class="log-area" id="logArea">
+        <div class="log-entry"><span class="lt">00:00:00</span><span class="lm ok">System initialized. Ready to dub.</span></div>
+      </div>
+
+      <!-- Downloads -->
+      <div class="download-section">
+        <div class="sec-label" style="margin-bottom:0">EXPORT</div>
+        <button class="dl-btn" id="dlVideo" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download Dubbed Video (.mp4)
+        </button>
+        <button class="dl-btn" id="dlSrt" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download Subtitles (.srt)
+        </button>
+        <button class="dl-btn" id="dlAudio" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download Audio Track (.wav)
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /main-grid -->
+</div>
+
+<script>
+// ── State ──
+let videoFile = null;
+let processing = false;
+let currentJobId = null;
+let pollInterval = null;
+let waveformAnimId = null;
+
+// ── Upload ──
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('video/')) handleVideoFile(f);
+  else showToast('Please drop a valid video file.', 'warn');
+}
+
+function handleVideoFile(f) {
+  if (!f) return;
+  videoFile = f;
+  const url = URL.createObjectURL(f);
+  document.getElementById('sourceVideo').src = url;
+  document.getElementById('origVideo').src = url;
+  document.getElementById('videoPreview').classList.add('active');
+  document.getElementById('uploadZone').classList.add('has-file');
+  document.getElementById('uploadIcon').textContent = '✅';
+  document.getElementById('uploadTitle').textContent = f.name.slice(0, 28);
+  document.getElementById('uploadDesc').textContent = `${(f.size/1024/1024).toFixed(1)} MB — ready to process`;
+  document.getElementById('vidName').textContent = f.name.slice(0,22);
+
+  // Show orig video in center
+  document.getElementById('origPlaceholder').style.display = 'none';
+  document.getElementById('origVideo').style.display = 'block';
+
+  // Get duration
+  const tempV = document.createElement('video');
+  tempV.src = url;
+  tempV.onloadedmetadata = () => {
+    const d = tempV.duration;
+    document.getElementById('vidDur').textContent = fmtTime(d);
+    document.getElementById('timeLabel').textContent = `0:00 / ${fmtTime(d)}`;
+  };
+
+  drawWaveformDemo();
+  addLog(`Video loaded: ${f.name} (${(f.size/1024/1024).toFixed(1)} MB)`, 'ok');
+  showToast('Video loaded successfully', 'ok');
+}
+
+// ── Opt select ──
+function selectOpt(key, el) {
+  const parent = el.parentElement;
+  parent.querySelectorAll('.opt-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function selectModel(el) {
+  const parent = el.parentElement;
+  parent.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  addLog(`Model selected: ${el.querySelector('.model-name').textContent}`, 'ok');
+}
+
+// ── Processing ──
+async function startProcessing() {
+  if (!videoFile) { showToast('Please upload a video first.', 'warn'); return; }
+  if (processing) return;
+
+  processing = true;
+  document.getElementById('processBtn').disabled = true;
+  document.getElementById('previewArea').style.display = 'none';
+  document.getElementById('processingOverlay').classList.add('active');
+  document.getElementById('centerStatus').textContent = 'PROCESSING';
+  document.getElementById('gpuBadge').textContent = 'GPU: ACTIVE';
+  document.getElementById('queueBadge').textContent = 'QUEUE: 1';
+
+  const langFrom = document.getElementById('langFrom').value;
+  const langTo   = document.getElementById('langTo').value;
+  const syncConf = document.querySelector('input[type=range]').value;
+  const voiceMode = document.querySelector('.opt-card[id="opt-clone"].active') ? 'clone' : 'tts';
+  const quality   = document.querySelector('.opt-card[id="opt-ultra"].active') ? 'ultra' : 'balanced';
+
+  // Prepare form
+  const formData = new FormData();
+  formData.append('video', videoFile);
+  formData.append('lang_from', langFrom);
+  formData.append('lang_to', langTo);
+  formData.append('voice_mode', voiceMode);
+  formData.append('quality', quality);
+  formData.append('sync_confidence', syncConf);
+
+  addLog(`Starting dub job: ${langFrom} → ${langTo} | ${quality} | ${voiceMode}`, 'ok');
+
+  try {
+    const res = await fetch('/api/dub', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.job_id) {
+      currentJobId = data.job_id;
+      addLog(`Job created: ${data.job_id}`, 'ok');
+      pollProgress(data.job_id);
+    } else {
+      throw new Error(data.error || 'Unknown error');
+    }
+  } catch(err) {
+    // Demo simulation when server is offline
+    addLog(`Demo mode: simulating dubbing pipeline...`, 'warn');
+    simulateProcessing();
+  }
+}
+
+// ── Poll job progress ──
+function pollProgress(jobId) {
+  pollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/dub/${jobId}/status`);
+      const data = await res.json();
+      updateProgress(data.stage, data.progress, data.message);
+      if (data.status === 'done') {
+        clearInterval(pollInterval);
+        onDubComplete(data);
+      } else if (data.status === 'error') {
+        clearInterval(pollInterval);
+        onDubError(data.message);
+      }
+    } catch { clearInterval(pollInterval); simulateProcessing(); }
+  }, 1500);
+}
+
+// ── Demo simulation ──
+const STAGES = [
+  { id:'pill-extract',   title:'EXTRACTING FRAMES',  step:'Decoding video stream and extracting audio track...', pct:10, label:'Frame extraction' },
+  { id:'pill-transcribe',title:'TRANSCRIBING AUDIO',  step:'Running Whisper ASR to generate transcript with timestamps...', pct:25, label:'Speech recognition' },
+  { id:'pill-translate', title:'TRANSLATING TEXT',    step:'Applying neural machine translation with context preservation...', pct:42, label:'Neural translation' },
+  { id:'pill-synth',     title:'SYNTHESIZING VOICE',  step:'Cloning speaker voice and synthesizing dubbed audio...', pct:60, label:'Voice synthesis' },
+  { id:'pill-lipsync',   title:'SYNCING LIPS',        step:'Applying Wav2Lip to match lip movements to dubbed audio...', pct:80, label:'Lip sync GAN' },
+  { id:'pill-render',    title:'RENDERING OUTPUT',    step:'Encoding final video with merged audio and enhanced quality...', pct:95, label:'Final render' },
+];
+
+let simStage = 0;
+let simInterval = null;
+
+function simulateProcessing() {
+  simStage = 0;
+  simInterval = setInterval(() => {
+    if (simStage >= STAGES.length) {
+      clearInterval(simInterval);
+      onDubComplete(null);
+      return;
+    }
+    const s = STAGES[simStage];
+    updateProgress(s.id, s.pct, s.step, s.title, s.label);
+    addLog(`[${s.label}] ${s.step}`, 'ok');
+    simStage++;
+  }, 2200);
+}
+
+function updateProgress(stageId, pct, step, title, label) {
+  STAGES.forEach(s => {
+    const pill = document.getElementById(s.id);
+    if (!pill) return;
+    if (s.id === stageId) pill.className = 'stage-pill active';
+    else if (STAGES.indexOf(s) < STAGES.findIndex(s2 => s2.id === stageId)) pill.className = 'stage-pill done';
+  });
+  document.getElementById('progBar').style.width = pct + '%';
+  document.getElementById('progPct').textContent = pct + '%';
+  if (title) document.getElementById('procTitle').textContent = title;
+  if (step) document.getElementById('procStep').textContent = step;
+  if (label) document.getElementById('progLabel').textContent = label;
+}
+
+function onDubComplete(data) {
+  processing = false;
+  document.getElementById('processBtn').disabled = false;
+  document.getElementById('processingOverlay').classList.remove('active');
+  document.getElementById('previewArea').style.display = 'flex';
+  document.getElementById('centerStatus').textContent = 'COMPLETE';
+  document.getElementById('gpuBadge').textContent = 'GPU: IDLE';
+  document.getElementById('queueBadge').textContent = 'QUEUE: 0';
+  document.getElementById('dubDot').classList.remove('active');
+
+  // Show dubbed video (use same source as demo)
+  if (videoFile) {
+    document.getElementById('dubPlaceholder').style.display = 'none';
+    document.getElementById('dubVideo').style.display = 'block';
+    document.getElementById('dubVideo').src = URL.createObjectURL(videoFile);
+  }
+
+  // Enable downloads
+  ['dlVideo','dlSrt','dlAudio'].forEach(id => {
+    document.getElementById(id).disabled = false;
+  });
+
+  document.getElementById('progBar').style.width = '100%';
+  document.getElementById('progPct').textContent = '100%';
+  STAGES.forEach(s => { const p = document.getElementById(s.id); if(p) p.className='stage-pill done'; });
+
+  drawWaveformDemo();
+  addLog('✓ Dubbing complete. Output ready for download.', 'ok');
+  showToast('✓ Dubbing complete! Ready to download.', 'ok');
+
+  // Download buttons (demo)
+  document.getElementById('dlVideo').onclick = () => showToast('In production, the dubbed MP4 would download here.', 'ok');
+  document.getElementById('dlSrt').onclick   = () => downloadSrt();
+  document.getElementById('dlAudio').onclick = () => showToast('Audio track download ready.', 'ok');
+}
+
+function onDubError(msg) {
+  processing = false;
+  document.getElementById('processBtn').disabled = false;
+  document.getElementById('processingOverlay').classList.remove('active');
+  document.getElementById('previewArea').style.display = 'flex';
+  document.getElementById('centerStatus').textContent = 'ERROR';
+  addLog(`Error: ${msg}`, 'err');
+  showToast('Processing failed. Check logs.', 'err');
+}
+
+function downloadSrt() {
+  const srt = `1\n00:00:00,000 --> 00:00:03,500\n[Dubbed subtitle line 1]\n\n2\n00:00:03,600 --> 00:00:07,000\n[Dubbed subtitle line 2]\n`;
+  const blob = new Blob([srt], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'dubbed_subtitles.srt'; a.click();
+}
+
+// ── Waveform ──
+function drawWaveformDemo() {
+  const canvas = document.getElementById('waveform');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth * 2, H = 128;
+  canvas.width = W; canvas.height = H;
+
+  ctx.clearRect(0, 0, W, H);
+  const bars = Math.floor(W / 4);
+  for (let i = 0; i < bars; i++) {
+    const h = 10 + Math.random() * (H/2 - 10) + Math.sin(i * 0.15) * 20;
+    const x = i * 4;
+    const alpha = 0.4 + Math.random() * 0.6;
+    ctx.fillStyle = `rgba(0,229,204,${alpha})`;
+    ctx.fillRect(x, H/2 - h/2, 2.5, h);
+  }
+}
+
+// ── Reset ──
+function resetAll() {
+  videoFile = null;
+  if (simInterval) clearInterval(simInterval);
+  if (pollInterval) clearInterval(pollInterval);
+  processing = false;
+
+  document.getElementById('videoPreview').classList.remove('active');
+  document.getElementById('uploadZone').classList.remove('has-file');
+  document.getElementById('uploadIcon').textContent = '🎬';
+  document.getElementById('uploadTitle').textContent = 'Drop Video Here';
+  document.getElementById('uploadDesc').textContent = 'Drag & drop or click to upload your video file for dubbing';
+  document.getElementById('origPlaceholder').style.display = '';
+  document.getElementById('origVideo').style.display = 'none';
+  document.getElementById('dubPlaceholder').style.display = '';
+  document.getElementById('dubVideo').style.display = 'none';
+  document.getElementById('processingOverlay').classList.remove('active');
+  document.getElementById('previewArea').style.display = 'flex';
+  document.getElementById('centerStatus').textContent = 'AWAITING INPUT';
+  document.getElementById('processBtn').disabled = false;
+  ['dlVideo','dlSrt','dlAudio'].forEach(id => document.getElementById(id).disabled = true);
+
+  const ctx = document.getElementById('waveform').getContext('2d');
+  ctx.clearRect(0, 0, 9999, 9999);
+  addLog('Session reset.', 'warn');
+}
+
+// ── Log ──
+function addLog(msg, type='ok') {
+  const la = document.getElementById('logArea');
+  const now = new Date();
+  const ts = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `<span class="lt">${ts}</span><span class="lm ${type}">${msg}</span>`;
+  la.appendChild(div);
+  la.scrollTop = la.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('logArea').innerHTML = '';
+  addLog('Log cleared.', 'warn');
+}
+
+function pad(n) { return String(n).padStart(2,'0'); }
+function fmtTime(s) { return `${Math.floor(s/60)}:${pad(Math.floor(s%60))}`; }
+
+// ── Toast ──
+function showToast(msg, type='ok') {
+  document.querySelector('.toast')?.remove();
+  const t = document.createElement('div');
+  t.className = 'toast';
+  const colors = { ok:'var(--cyan)', warn:'var(--gold)', err:'var(--red)' };
+  t.style.borderLeftColor = colors[type] || colors.ok;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t?.remove(), 4000);
+}
+
+// Init waveform on load
+window.addEventListener('load', () => {
+  setTimeout(drawWaveformDemo, 300);
+});
+</script>
+</body>
+</html>
